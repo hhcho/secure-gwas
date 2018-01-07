@@ -1,0 +1,185 @@
+This package contains the client software for an end-to-end
+multiparty computation (MPC) protocol for secure GWAS as
+described in:
+
+  Secure genome crowdsourcing for million-individual association studies
+  Hyunghoon Cho, David J. Wu, Bonnie Berger
+  Nature Biotechnology, 2018
+
+This software is written in C++ and has been tested in Ubuntu 17.04.
+
+Dependencies:
+  
+  clang++ compiler (3.9; https://clang.llvm.org/)
+  GMP library (6.1.2; https://gmplib.org/)
+  libssl-dev package (1.0.2g-1ubuntu11.2)
+  NTL package (10.3.0; http://www.shoup.net/ntl/)
+
+Notes on NTL:
+
+  We made a few modifications to NTL for our random streams.
+  Copy the contents of code/NTL_mod/ into the NTL source
+  directory as follows before compiling NTL:
+
+    Copy ZZ.cpp into NTL_PACKAGE_DIR/src/
+    Copy ZZ.h into NTL_PACKAGE_DIR/include/NTL/
+
+  In addition, we recommend setting NTL_THREAD_BOOST=on
+  during the configuration of NTL to enable thread-boosting.
+
+Compilation:
+
+  First, update the paths in code/Makefile:
+
+    CPP points to the clang++ compiler executable.
+    INCPATHS points to the header files of installed libraries.
+    LDPATH contains the .a files of installed libraries.
+
+  To compile, run ./make inside the code/ directory.
+
+  This will create three executables of interest:
+    
+    bin/GenerateKey
+    bin/DataSharingClient
+    bin/GwasClient
+
+  This process should take only a few seconds.
+
+How to run:
+
+  Our MPC protocol consists of four entities: SP, CP0, CP1, and CP2.
+  Study participants (SP) provide input data to the protocol, and
+  three computing parties (CP0, CP1, CP2) interactively carry out GWAS.
+  More detailed description is provided in our manuscript.
+
+  Note we treat SP as a single entity that holds all input genomes
+  and phenotypes, but it is straightforward to generalize this setup
+  to the crowdsourcing scenario where multiple SPs securely share
+  their data with the CPs.
+
+  An instance of the client program is created for each involved
+  party on different machines, where the ID of the corresponding
+  party is provided as an input argument: 0=CP0, 1=CP1, 2=CP2, 3=SP.
+
+  These multiple instances of the client will interact over the
+  network to jointly carry out the MPC protocol.
+
+  For testing purposes, some (or all) of the instances may be run
+  on the same machine.
+
+  ==== Step 1: Setup Shared Random Keys ====
+
+  Secure communication channels needed for the overall protocol are:
+    
+    CP0 <-> CP1, CP0 <-> CP2, CP1 <-> CP2, CP1 <-> SP, CP2 <-> SP
+
+  Use GenerateKey to obtain a secret key for each pair, which should
+  be named:
+
+    P0_P1.key, P0_P2.key, P1_P2.key, P1_P3.key, P2_P3.key
+
+  The syntax for running GenerateKey is as follows:
+
+    ./GenerateKey OUTPUT_FILENAME.key
+  
+  In addition, generate global.key and share it with all parties.
+
+  We provide pre-generated keys in key/ directory. In practice,
+  each party will have the keys for only the channels
+  they are involved in.
+
+  ==== Step 2: Setup Parameters ====
+
+  We provide example parameter settings in:
+  
+    par/test.par.PARTY_ID.txt
+
+  For more information about each parameter, please consult code/param.h
+  and Supplementary Information of our publication.
+
+  For a test run, update the following parameters according to your
+  network environment and leave the rest:
+
+    PORT_*
+    IP_ADDR_*
+
+  Make sure that the specified ports are not blocked by the firewall.
+    
+  ==== Step 3: Setup Input Data ====
+
+  On the machine where the SP instance will be running, the data set
+  should be available in plaintext. We provide an example data set in
+  test_data/ directory. The required format is as follows:
+
+    geno.txt: a minor allele dosage matrix with NUM_INDS rows and
+      NUM_SNPS columns. -1 indicates missing genotypes.
+
+    pheno.txt: a phenotype vector with NUM_INDS rows. We assume the
+      phenotype is binary, but our protocol can be extended to support
+      continuous values.
+
+    cov.txt: a covariate matrix with NUM_INDS rows and NUM_COVS 
+      columns. We assume all covariates are binary, but our protocol
+      can be extended to support continuous values.
+
+  In addition, a file (see pos.txt) containing the genomic positions
+  of SNPs in geno.txt (one-per-line in the same order) is considered
+  public and should be shared with all parties. The path to this file
+  is provided in the parameter SNP_POS_FILE.
+
+  ==== Step 4: Initial Data Sharing ====
+
+  On the respective machines, cd into code/ and run DataSharingClient
+  for each party in the following order:
+
+    CP0: bin/DataSharingClient 0 ../par/test.par.0.txt
+    CP1: bin/DataSharingClient 1 ../par/test.par.1.txt
+    CP2: bin/DataSharingClient 2 ../par/test.par.2.txt
+    SP:  bin/DataSharingClient 3 ../par/test.par.3.txt ../test_data/
+
+  During this step, SP securely shares its data with CP1 and CP2.
+  The resulting shares are stored in the cache files:
+
+    {CACHE_FILE_PREFIX}_input_geno.bin
+    {CACHE_FILE_PREFIX}_input_pheno_cov.bin
+
+  For the toy dataset, this process should take only a few seconds.
+
+  ==== Step 5: GWAS ====
+
+  On the respective machines, cd into code/ and run GwasClient
+  for each party (excluding SP) in the following order:
+
+    CP0: bin/GwasClient 0 ../par/test.par.0.txt
+    CP1: bin/GwasClient 1 ../par/test.par.1.txt
+    CP2: bin/GwasClient 2 ../par/test.par.2.txt
+
+  The final output including the association statistics ("assoc") and
+  the QC filter results for individuals ("ikeep") and SNPs ("gkeep1",
+  "gkeep2") are provided in:
+  
+    {OUTPUT_FILE_PREFIX}_*.txt
+
+  Note these files are created only on the machine where CP2 is running.
+
+  This step also takes only a few seconds on the toy dataset. Expected
+  runtimes for realistic dataset sizes can be found in our manuscript.
+
+A note on logistic regression:
+  
+  We additionally provide a proof-of-concept implementation of secure
+  logistic regression for obtaining effect size estimates (odds ratio)
+  of the top 100 SNPs identified by our GWAS protocol. This is achieved
+  by running LogiRegClient in the same manner as GwasClient. Note that
+  this step should be performed after the GWAS computation as it
+  uses the results and the cached data files from GWAS.
+
+Reproducing results in our manuscript:
+
+  GWAS datasets used in our manuscript are available through dbGaP.
+  Accession numbers for the datasets and associated preprocessing steps
+  are provided in our manuscript.
+  
+Contact for questions:
+
+   Hoon Cho, hhcho@mit.edu
