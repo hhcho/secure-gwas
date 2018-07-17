@@ -2,7 +2,7 @@ This package contains the client software for an end-to-end
 multiparty computation (MPC) protocol for secure GWAS as
 described in:
 
-  Secure genome crowdsourcing for million-individual association studies
+  Secure genome-wide association analysis using multiparty computation
   Hyunghoon Cho, David J. Wu, Bonnie Berger
   Nature Biotechnology, 2018
 
