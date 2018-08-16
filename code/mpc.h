@@ -994,7 +994,7 @@ public:
     BeaverPartition(ar, am, a, fid);
     BeaverPartition(br, bm, b, fid);
     
-    Init(c, a.NumRows());
+    Init(c, a.length());
     BeaverMult(c, ar, am, br, bm, fid);
 
     BeaverReconstruct(c, fid);
